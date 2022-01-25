@@ -1,0 +1,56 @@
+import os
+import json
+import boto3
+from datetime import datetime
+def get_db_snapshot():
+    """
+    Funtion to get the latest snapshot
+    Returns: Latest snapshot
+    """
+    db_cluster_id = "database-1"
+    
+    client = boto3.client("rds")
+    desc_cluster_snapshots = client.describe_db_snapshots(
+                        DBInstanceIdentifier=db_cluster_id,
+                        SnapshotType="automated"
+                        )
+    db_snapshots = {}
+    
+    
+    for snapshot in desc_cluster_snapshots["DBSnapshots"]:
+        db_snapshots.update([(snapshot["DBSnapshotArn"], snapshot["SnapshotCreateTime"])])
+ 
+    return (max(db_snapshots.items()))
+    
+
+def jsondatetimeconverter(o):
+    """To avoid TypeError: datetime.datetime(...) is not JSON serializable"""
+    if isinstance(o, datetime):
+        return o.__str__()
+    
+def lambda_handler(event, context):
+    """
+    Function to invoke start_export_task using
+    recent most system snapshot
+    Return: Response 
+    """
+    
+    s3_bucket = "openedxuex-rds-backups"
+    iam_role = "arn:aws:iam::950822648298:role/service-role/rds-export-to-s3-role-mlkbc771"
+    kms_key = "arn:aws:kms:eu-west-1:950822648298:key/07711ce5-3d75-4a01-9b40-0999e1aaf9ed"
+    #tables = os.environ["TABLE_LIST"]
+    #tables = json.loads(tables)
+    client = boto3.client("rds")
+        
+    get_latest_snapshot_name,get_latest_snapshot_time  = get_db_snapshot()
+    today_date = datetime.today().strftime("%Y%m%d")
+    export_task = "db-table-backup-"+today_date
+        
+    response = client.start_export_task(
+            ExportTaskIdentifier=export_task,
+            SourceArn=get_latest_snapshot_name,
+            S3BucketName=s3_bucket,
+            IamRoleArn=iam_role,
+            KmsKeyId=kms_key)
+            
+    return(json.dumps(response, default=jsondatetimeconverter))
